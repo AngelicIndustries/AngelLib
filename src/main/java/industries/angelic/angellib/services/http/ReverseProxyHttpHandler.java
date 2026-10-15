@@ -1,0 +1,422 @@
+package industries.angelic.angellib.services.http;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+import industries.angelic.angellib.AngelLib;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.handler.codec.http.DefaultFullHttpResponse;
+import io.netty.handler.codec.http.FullHttpRequest;
+import io.netty.handler.codec.http.FullHttpResponse;
+import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.HttpVersion;
+import io.netty.handler.codec.http.QueryStringDecoder;
+import io.netty.util.CharsetUtil;
+
+public class ReverseProxyHttpHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
+
+    private static final String CONTENT_TYPE_JSON = "application/json; charset=utf-8";
+
+    /**
+     * Request headers that are forwarded to the upstream. Anything not in this set is dropped to prevent header
+     * smuggling — in particular, attacker-supplied {@code Authorization}, {@code Cookie}, {@code X-Forwarded-*},
+     * and similar trust headers must not reach localhost services that grant privileges to loopback callers.
+     */
+    private static final Set<String> FORWARDED_REQUEST_HEADERS;
+
+    static {
+        Set<String> headers = new HashSet<>(
+            Arrays.asList(
+                "accept",
+                "accept-charset",
+                "accept-encoding",
+                "accept-language",
+                "cache-control",
+                "content-encoding",
+                "content-language",
+                "content-type",
+                "if-match",
+                "if-modified-since",
+                "if-none-match",
+                "if-range",
+                "if-unmodified-since",
+                "pragma",
+                "range",
+                "user-agent"));
+        FORWARDED_REQUEST_HEADERS = Collections.unmodifiableSet(headers);
+    }
+
+    @Override
+    protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest request) {
+        if (tryHandle(ctx, request)) {
+            return;
+        }
+        sendJson(
+            ctx,
+            HttpResponseStatus.NOT_FOUND,
+            "{\"error\":\"RouteNotFound\",\"errorMessage\":\"No HTTP port route matched this path\"}");
+    }
+
+    public static boolean tryHandle(ChannelHandlerContext ctx, FullHttpRequest request) {
+        String uri = request.getUri();
+        String path = new QueryStringDecoder(uri).path();
+        HttpPortProxyConfig config = HttpPortProxyConfig.get();
+        ResolvedRoute resolvedRoute = resolveRoute(config, path);
+        if (resolvedRoute == null) {
+            return false;
+        }
+        if (shouldRedirectToMountedDirectory(path, resolvedRoute)) {
+            sendRedirect(ctx, addTrailingSlash(uri));
+            return true;
+        }
+
+        String upstreamUrl = buildUpstreamUrl(resolvedRoute.route, uri, resolvedRoute.routeRelativePath);
+        if (upstreamUrl == null) {
+            sendJson(
+                ctx,
+                HttpResponseStatus.BAD_REQUEST,
+                "{\"error\":\"BadRequest\",\"errorMessage\":\"Request path is not within the mounted route\"}");
+            return true;
+        }
+
+        try {
+            ProxyResponse response = proxy(
+                resolvedRoute.route,
+                upstreamUrl,
+                request,
+                ctx.channel()
+                    .remoteAddress());
+            sendResponse(ctx, response);
+        } catch (IOException e) {
+            AngelLib.LOG.warn("Proxy request failed for {} {}: {}", request.getMethod(), uri, e.getMessage());
+            sendJson(
+                ctx,
+                HttpResponseStatus.BAD_GATEWAY,
+                "{\"error\":\"UpstreamUnavailable\",\"errorMessage\":\"Failed to contact mapped local service\"}");
+        }
+        return true;
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        AngelLib.LOG.warn("HTTP reverse proxy exception: {}", cause.getMessage());
+        ctx.close();
+    }
+
+    private static ProxyResponse proxy(HttpPortProxyConfig.Route route, String upstreamUrl, FullHttpRequest request,
+        SocketAddress clientAddress) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(upstreamUrl).openConnection();
+        connection.setInstanceFollowRedirects(false);
+        connection.setRequestMethod(
+            request.getMethod()
+                .name());
+        connection.setDoInput(true);
+        connection.setConnectTimeout(5000);
+        connection.setReadTimeout(15000);
+
+        copyRequestHeaders(request, connection, clientAddress);
+
+        ByteBuf content = request.content();
+        if (content.readableBytes() > 0) {
+            byte[] body = new byte[content.readableBytes()];
+            content.getBytes(content.readerIndex(), body);
+            connection.setDoOutput(true);
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(body);
+            }
+        }
+
+        int status = connection.getResponseCode();
+        byte[] body = readBody(connection);
+        Map<String, String> headers = copyResponseHeaders(connection, route);
+        return new ProxyResponse(status, body, headers);
+    }
+
+    /**
+     * Builds the upstream URL after verifying that the requested path stays within the route's mounted prefix.
+     * Returns {@code null} if the request would escape the mount (path traversal via {@code ..}, percent-encoded
+     * dots, embedded slashes, NUL, or backslash).
+     */
+    static String buildUpstreamUrl(HttpPortProxyConfig.Route route, String requestUri, String rawRelativePath) {
+        String prefix = route.normalizedTargetPathPrefix();
+        String basePath = prefix.equals("/") ? "/" : prefix + "/";
+
+        String decodedRelative;
+        try {
+            decodedRelative = new URI(null, null, "/" + rawRelativePath, null).getPath();
+        } catch (URISyntaxException e) {
+            return null;
+        }
+        if (decodedRelative == null) {
+            return null;
+        }
+        if (decodedRelative.indexOf('\0') >= 0 || decodedRelative.indexOf('\\') >= 0) {
+            return null;
+        }
+        while (decodedRelative.startsWith("/")) {
+            decodedRelative = decodedRelative.substring(1);
+        }
+
+        URI resolved;
+        try {
+            URI base = new URI("http", null, "127.0.0.1", route.targetPort, basePath, null, null);
+            URI relative = new URI(null, null, decodedRelative, null);
+            resolved = base.resolve(relative)
+                .normalize();
+        } catch (URISyntaxException e) {
+            return null;
+        }
+
+        String resolvedPath = resolved.getPath();
+        if (resolvedPath == null || !resolvedPath.startsWith(basePath)) {
+            return null;
+        }
+        if (!"127.0.0.1".equals(resolved.getHost()) || resolved.getPort() != route.targetPort) {
+            return null;
+        }
+
+        StringBuilder out = new StringBuilder(resolved.toString());
+        int queryIndex = requestUri.indexOf('?');
+        if (queryIndex >= 0) {
+            out.append(requestUri.substring(queryIndex));
+        }
+        return out.toString();
+    }
+
+    private static void copyRequestHeaders(FullHttpRequest request, HttpURLConnection connection,
+        SocketAddress clientAddress) {
+        for (Map.Entry<String, String> header : request.headers()) {
+            String name = header.getKey();
+            if (name == null) {
+                continue;
+            }
+            if (!FORWARDED_REQUEST_HEADERS.contains(name.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            connection.setRequestProperty(name, header.getValue());
+        }
+        String clientIp = extractClientIp(clientAddress);
+        if (clientIp != null) {
+            connection.setRequestProperty("X-Forwarded-For", clientIp);
+            connection.setRequestProperty("X-Real-IP", clientIp);
+        }
+        connection.setRequestProperty("X-Forwarded-Proto", "http");
+    }
+
+    private static String extractClientIp(SocketAddress address) {
+        if (address instanceof InetSocketAddress) {
+            InetSocketAddress inet = (InetSocketAddress) address;
+            if (inet.getAddress() != null) {
+                return inet.getAddress()
+                    .getHostAddress();
+            }
+        }
+        return null;
+    }
+
+    private static Map<String, String> copyResponseHeaders(HttpURLConnection connection,
+        HttpPortProxyConfig.Route route) {
+        Map<String, String> result = new LinkedHashMap<>();
+        for (Map.Entry<String, List<String>> entry : connection.getHeaderFields()
+            .entrySet()) {
+            String name = entry.getKey();
+            if (name == null || entry.getValue() == null
+                || entry.getValue()
+                    .isEmpty()) {
+                continue;
+            }
+            if ("transfer-encoding".equalsIgnoreCase(name) || "connection".equalsIgnoreCase(name)) {
+                continue;
+            }
+            String value = entry.getValue()
+                .get(0);
+            if ("location".equalsIgnoreCase(name)) {
+                value = rewriteLocationHeader(value, route);
+            }
+            result.put(name, value);
+        }
+        return result;
+    }
+
+    private static byte[] readBody(HttpURLConnection connection) throws IOException {
+        InputStream stream = null;
+        try {
+            stream = connection.getErrorStream();
+            if (stream == null) {
+                stream = connection.getInputStream();
+            }
+            if (stream == null) {
+                return new byte[0];
+            }
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = stream.read(buffer)) >= 0) {
+                output.write(buffer, 0, read);
+            }
+            return output.toByteArray();
+        } finally {
+            if (stream != null) {
+                stream.close();
+            }
+            connection.disconnect();
+        }
+    }
+
+    private static void sendResponse(ChannelHandlerContext ctx, ProxyResponse proxyResponse) {
+        ByteBuf content = Unpooled.wrappedBuffer(proxyResponse.body);
+        FullHttpResponse response = new DefaultFullHttpResponse(
+            HttpVersion.HTTP_1_1,
+            HttpResponseStatus.valueOf(proxyResponse.statusCode),
+            content);
+        for (Map.Entry<String, String> header : proxyResponse.headers.entrySet()) {
+            response.headers()
+                .set(header.getKey(), header.getValue());
+        }
+        response.headers()
+            .set(HttpHeaders.Names.CONTENT_LENGTH, content.readableBytes());
+        response.headers()
+            .set(HttpHeaders.Names.CONNECTION, HttpHeaders.Values.CLOSE);
+        ctx.writeAndFlush(response)
+            .addListener(ChannelFutureListener.CLOSE);
+    }
+
+    private static void sendRedirect(ChannelHandlerContext ctx, String location) {
+        FullHttpResponse response = new DefaultFullHttpResponse(
+            HttpVersion.HTTP_1_1,
+            HttpResponseStatus.MOVED_PERMANENTLY);
+        response.headers()
+            .set(HttpHeaders.Names.LOCATION, location);
+        response.headers()
+            .set(HttpHeaders.Names.CONTENT_LENGTH, 0);
+        response.headers()
+            .set(HttpHeaders.Names.CONNECTION, HttpHeaders.Values.CLOSE);
+        ctx.writeAndFlush(response)
+            .addListener(ChannelFutureListener.CLOSE);
+    }
+
+    private static void sendJson(ChannelHandlerContext ctx, HttpResponseStatus status, String body) {
+        ByteBuf content = Unpooled.copiedBuffer(body, CharsetUtil.UTF_8);
+        FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status, content);
+        response.headers()
+            .set(HttpHeaders.Names.CONTENT_TYPE, CONTENT_TYPE_JSON);
+        response.headers()
+            .set(HttpHeaders.Names.CONTENT_LENGTH, content.readableBytes());
+        response.headers()
+            .set(HttpHeaders.Names.CONNECTION, HttpHeaders.Values.CLOSE);
+        ctx.writeAndFlush(response)
+            .addListener(ChannelFutureListener.CLOSE);
+    }
+
+    private static ResolvedRoute resolveRoute(HttpPortProxyConfig config, String path) {
+        HttpPortProxyConfig.Route directRoute = config.match(path);
+        if (directRoute == null) {
+            return null;
+        }
+        return new ResolvedRoute(directRoute, HttpPortProxyConfig.stripRoutePrefix(path, directRoute));
+    }
+
+    private static boolean shouldRedirectToMountedDirectory(String path, ResolvedRoute resolvedRoute) {
+        return ("/" + resolvedRoute.route.path).equals(path);
+    }
+
+    private static String addTrailingSlash(String uri) {
+        int queryIndex = uri.indexOf('?');
+        if (queryIndex < 0) {
+            return uri + "/";
+        }
+        return uri.substring(0, queryIndex) + "/" + uri.substring(queryIndex);
+    }
+
+    private static String rewriteLocationHeader(String location, HttpPortProxyConfig.Route route) {
+        if (location == null || location.isEmpty()) {
+            return location;
+        }
+
+        try {
+            URI uri = URI.create(location);
+            if (!uri.isAbsolute()) {
+                if (location.startsWith("/")) {
+                    return mountPath(route, location);
+                }
+                return mountPath(route, "/" + location);
+            }
+
+            String expectedHost = "127.0.0.1";
+            if (expectedHost.equalsIgnoreCase(uri.getHost()) && uri.getPort() == route.targetPort) {
+                String rewritten = mountPath(route, uri.getPath());
+                if (uri.getQuery() != null && !uri.getQuery()
+                    .isEmpty()) {
+                    rewritten += "?" + uri.getQuery();
+                }
+                if (uri.getFragment() != null && !uri.getFragment()
+                    .isEmpty()) {
+                    rewritten += "#" + uri.getFragment();
+                }
+                return rewritten;
+            }
+        } catch (Exception e) {
+            if (location.startsWith("/")) {
+                return mountPath(route, location);
+            }
+        }
+
+        return location;
+    }
+
+    private static String mountPath(HttpPortProxyConfig.Route route, String path) {
+        String normalized = path == null ? "/" : path;
+        if (!normalized.startsWith("/")) {
+            normalized = "/" + normalized;
+        }
+        if (normalized.equals("/")) {
+            return "/" + route.path + "/";
+        }
+        return "/" + route.path + normalized;
+    }
+
+    private static final class ProxyResponse {
+
+        private final int statusCode;
+        private final byte[] body;
+        private final Map<String, String> headers;
+
+        private ProxyResponse(int statusCode, byte[] body, Map<String, String> headers) {
+            this.statusCode = statusCode;
+            this.body = body;
+            this.headers = headers;
+        }
+    }
+
+    private static final class ResolvedRoute {
+
+        private final HttpPortProxyConfig.Route route;
+        private final String routeRelativePath;
+
+        private ResolvedRoute(HttpPortProxyConfig.Route route, String routeRelativePath) {
+            this.route = route;
+            this.routeRelativePath = routeRelativePath;
+        }
+    }
+}

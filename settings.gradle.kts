@@ -19,3 +19,5 @@ pluginManagement {
 plugins {
     id("com.gtnewhorizons.gtnhsettingsconvention") version("2.0.32")
 }
+
+rootProject.name = "AngelLib"

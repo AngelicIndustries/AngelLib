@@ -6,39 +6,67 @@ import net.darkhax.curseforgegradle.CurseForgeGradlePlugin
 import net.darkhax.curseforgegradle.TaskPublishCurseForge
 import org.gradle.api.artifacts.dsl.RepositoryHandler
 import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+import org.gradle.api.publish.PublishingExtension
+import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.jvm.tasks.Jar
 
-val fentMavenName = "Fent Maven"
-val fentMavenUrl = uri("https://maven.fentanylsolutions.org/releases")
+val angelicMavenName = "Angelic Maven"
+val angelicMavenUrl = uri("https://maven.angelic.industries/releases")
 val curseForgeLimitedMessage =
-    "For enhanced file-related functionality, download FentLib from a different source than CurseForge"
+    "For enhanced file-related functionality, download AngelLib from a different source than CurseForge"
 
-fun RepositoryHandler.keepFentMavenFirst() {
-    fun currentFentRepo(): MavenArtifactRepository? = withType(MavenArtifactRepository::class.java)
-        .firstOrNull { it.url == fentMavenUrl || it.name == fentMavenName }
+fun RepositoryHandler.keepAngelicMavenFirst() {
+    fun currentAngelicRepo(): MavenArtifactRepository? = withType(MavenArtifactRepository::class.java)
+        .firstOrNull { it.url == angelicMavenUrl || it.name == angelicMavenName }
 
-    fun promoteFentRepo() {
-        val fentRepo = currentFentRepo() ?: maven {
-            name = fentMavenName
-            url = fentMavenUrl
+    fun promoteAngelicRepo() {
+        val angelicRepo = currentAngelicRepo() ?: maven {
+            name = angelicMavenName
+            url = angelicMavenUrl
         }
-        if (firstOrNull() !== fentRepo) {
-            remove(fentRepo)
-            addFirst(fentRepo)
+        if (firstOrNull() !== angelicRepo) {
+            remove(angelicRepo)
+            addFirst(angelicRepo)
         }
     }
 
-    promoteFentRepo()
+    promoteAngelicRepo()
     whenObjectAdded {
-        promoteFentRepo()
+        promoteAngelicRepo()
     }
 }
 
 gradle.allprojects {
-    repositories.keepFentMavenFirst()
-    buildscript.repositories.keepFentMavenFirst()
+    repositories.keepAngelicMavenFirst()
+    buildscript.repositories.keepAngelicMavenFirst()
+}
+
+extensions.configure<PublishingExtension> {
+    publications.withType<MavenPublication>().configureEach {
+        pom {
+            name.set("AngelLib")
+            description.set("A shared code library and tweak/fix mod from Angelic Industries.")
+            url.set("https://github.com/AngelicIndustries/AngelLib")
+            organization {
+                name.set("Angelic Industries")
+                url.set("https://angelic.industries/")
+            }
+            scm {
+                url.set("https://github.com/AngelicIndustries/AngelLib")
+                connection.set("scm:git:https://github.com/AngelicIndustries/AngelLib.git")
+                developerConnection.set("scm:git:ssh://git@github.com/AngelicIndustries/AngelLib.git")
+            }
+            licenses {
+                license {
+                    name.set("GNU Lesser General Public License, version 3")
+                    url.set("https://www.gnu.org/licenses/lgpl-3.0.html")
+                    distribution.set("repo")
+                }
+            }
+        }
+    }
 }
 
 val configuredCurseForgeProjectId = providers.gradleProperty("curseForgeProjectId")
@@ -123,9 +151,9 @@ val curseForgeJar = tasks.register<Jar>("curseForgeJar") {
     manifest {
         attributes(
             "FMLCorePluginContainsFMLMod" to "true",
-            "FMLCorePlugin" to "org.fentanylsolutions.fentlib.core.EarlyMixinLoader",
+            "FMLCorePlugin" to "industries.angelic.angellib.core.EarlyMixinLoader",
             "TweakClass" to "org.spongepowered.asm.launch.MixinTweaker",
-            "MixinConfigs" to "mixins.fentlib.json",
+            "MixinConfigs" to "mixins.angellib.json",
             "ForceLoadAsMod" to "true",
         )
     }
@@ -134,14 +162,14 @@ val curseForgeJar = tasks.register<Jar>("curseForgeJar") {
         exclude(
             "META-INF/MANIFEST.MF",
             "mcmod.info",
-            "org/fentanylsolutions/fentlib/util/FileUtil.class",
-            "org/fentanylsolutions/fentlib/util/FileUtil\$*.class",
+            "industries/angelic/angellib/util/FileUtil.class",
+            "industries/angelic/angellib/util/FileUtil\$*.class",
         )
     }
     from(curseForgeReplacementSourceSet.output.classesDirs) {
         include(
-            "org/fentanylsolutions/fentlib/util/FileUtil.class",
-            "org/fentanylsolutions/fentlib/util/FileUtil\$*.class",
+            "industries/angelic/angellib/util/FileUtil.class",
+            "industries/angelic/angellib/util/FileUtil\$*.class",
         )
     }
     from(curseForgeMcmodInfoFile) {
@@ -172,7 +200,7 @@ if (configuredCurseForgeProjectId.isNotEmpty()) {
 
     val publishCurseforge = tasks.register<TaskPublishCurseForge>("publishCurseforge") {
         group = "publishing"
-        description = "Publishes the CurseForge-specific FentLib jar to CurseForge."
+        description = "Publishes the CurseForge-specific AngelLib jar to CurseForge."
         dependsOn(reobfCurseForgeJar)
 
         apiToken = providers.environmentVariable("CURSEFORGE_TOKEN")

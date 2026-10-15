@@ -1,0 +1,15 @@
+angellib.configgui.title=AngelLib Config
+
+angellib.gui.common.failed_message=Failed: %s
+angellib.gui.file_picker.interrupted=File picker interrupted.
+angellib.gui.file_picker.macos_failed=macOS picker failed.
+angellib.gui.file_picker.no_file=File picker returned no file.
+angellib.gui.file_picker.not_a_file=Selected path is not a file.
+angellib.gui.file_picker.not_macos=Not macOS.
+angellib.gui.file_picker.not_readable=Selected file is not readable.
+angellib.gui.file_picker.osascript_missing=osascript unavailable.
+angellib.gui.file_picker.select_file=Select File
+angellib.gui.file_picker.tinyfd_missing=LWJGL tinyfd not present.
+angellib.gui.file_picker.unavailable=Native file picker is not available on this runtime.
+angellib.gui.file_picker.unknown_error=Unknown picker error.
+angellib.gui.file_picker.unsupported_type=Only %s files are supported.

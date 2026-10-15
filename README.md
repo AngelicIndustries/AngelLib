@@ -1,14 +1,16 @@
-# FentLib
+# AngelLib
+
+AngelLib 1.0.0 replaces FentLib. This is a breaking release: update dependent mods together; old packages, mod IDs, network payloads, and configuration paths are not supported.
 A shared code library and tweak/fix mod.
 
-![logo](images/logo_small.png)
+![logo](images/angel_logo_small.png)
 
-[![hub](images/badges/github.png)](https://github.com/JackOfNoneTrades/FentLib/releases)
-[![curse](images/badges/curse.png)](https://www.curseforge.com/minecraft/mc-mods/fentlib)
-[![modrinth](images/badges/modrinth.png)](https://modrinth.com/mod/fentlib)
+[![hub](images/badges/github.png)](https://github.com/AngelicIndustries/AngelLib/releases)
+[![curse](images/badges/curse.png)](https://www.curseforge.com/minecraft/mc-mods/angellib)
+[![modrinth](images/badges/modrinth.png)](https://modrinth.com/mod/angellib)
 [![mcmodcn](images/badges/mcmodcn.png)](https://www.mcmod.cn/class/27311.html)
-[![67](images/badges/67.png)](https://67.fentanylsolutions.org/mod/fentlib)
-[![maven](images/badges/maven.png)](https://maven.fentanylsolutions.org/#/releases/org/fentanylsolutions/fentlib/FentLib)
+[![67](images/badges/67.png)](https://67minecraft.com/mod/angellib)
+[![maven](images/badges/maven.png)](https://maven.angelic.industries/#/releases/industries/angelic/angellib/AngelLib)
 ![forge](images/badges/forge.png)
 [![cord](images/badges/cord.png)](https://discord.gg/xAWCqGrguG)
 
@@ -21,8 +23,8 @@ Use the `/reload_icon` command to reload the icon. Also works for `server-icon.p
 public class ClientProxy extends CommonProxy {
     @Override
     public void preInit(FMLPreInitializationEvent event) {
-      S00PacketServerInfoModifyService.registerDeserializeHandler((response, fentlibData, serverData) -> {
-        if (fentlibData.has("server_to_client_payload")) {
+      S00PacketServerInfoModifyService.registerDeserializeHandler((response, angellibData, serverData) -> {
+        if (angellibData.has("server_to_client_payload")) {
           // Yoohoo we got something back!!!!
           // serverData contains stuff like server IP
         }
@@ -33,8 +35,8 @@ public class ClientProxy extends CommonProxy {
 public class CommonProxy {
   public void preInit(FMLPreInitializationEvent event) {
     if (MiscUtil.isServer()) {
-      S00PacketServerInfoModifyService.registerHandler((response, fentLibPresent) -> {
-        // fentLibPresent is just a boolean indicating whether fentlib is loaded
+      S00PacketServerInfoModifyService.registerHandler((response, angelLibPresent) -> {
+        // angelLibPresent is just a boolean indicating whether angellib is loaded
         return "server_to_client_payload";
         // You can return a String, a S00PacketServerInfoModifyService.KeyValue, or a JsonElement. If you return
         // a non-null value, it will be passed back to the client
@@ -46,7 +48,7 @@ public class CommonProxy {
 * `/dump_thaumonomicon <Optional Comment>` command. Run it from the client, and all Thaumcraft research will be dumped as a static website. The comment will be visible under the page title, and you can indicate the pack or mods for with which the dump was done.
 ![Dump example](images/dumper_example.png)
 * `/warpdim` [dimension ID] command. Painlessly warp to a dimension (meant for debugging).
-* `SessionAccessTokenOverrideMixin` allows overriding the session access token in dev launches via `-Dfentlib.accessTokenOverride=<token>`.
+* `SessionAccessTokenOverrideMixin` allows overriding the session access token in dev launches via `-Dangellib.accessTokenOverride=<token>`.
 * Client sound utilities to set a custom max attenuation distance without increasing the sound volume. Methods:
 ```java
 SoundUtil.withMaxDistance(ISound sound, float maxDistance);
@@ -58,14 +60,14 @@ Example:
 ```java
 SoundUtil.playAt(waveSound, x, y, z, 0.25F, 1.0F, 64.0F);
 ```
-* HTTP-on-Minecraft-port reverse proxying for local web UIs. Configure path-to-port mappings in `config/fentlib/http-port-routes.json` so services like Dynmap can be reached through the server port, such as `/dynmap/...`, instead of separate ports.
-Set `publicBaseUrl` in `config/fentlib/fentlib.cfg` to the public base URL of the server; mods should append their own relative route paths on top of it.
+* HTTP-on-Minecraft-port reverse proxying for local web UIs. Configure path-to-port mappings in `config/angellib/http-port-routes.json` so services like Dynmap can be reached through the server port, such as `/dynmap/...`, instead of separate ports.
+Set `publicBaseUrl` in `config/angellib/angellib.cfg` to the public base URL of the server; mods should append their own relative route paths on top of it.
 * QOI image format support and utils thanks to [saharNooby/qoi-java](https://github.com/saharNooby/qoi-java). For usage example, check out how support for `server-icon.qoi` is implemented.
 * WebP image format support and utils thanks to [haraldk/TwelveMonkeys](https://github.com/haraldk/TwelveMonkeys). For usage example, check out how support for `server-icon.webp` is implemented.
 * Default server icon path can be configured using the `serverIconDirectory` config option.
 
 ## Fishing Loot Config
-Set `enableFishingLootTable=true` in `config/fentlib/fentlib.cfg` to enable FentLib's fishing override. The loot table lives at `config/fentlib/fishing-loot.json`. When enabled, vanilla still decides whether a catch is `fish`, `junk`, or `treasure`, but the item itself comes only from this JSON.
+Set `enableFishingLootTable=true` in `config/angellib/angellib.cfg` to enable AngelLib's fishing override. The loot table lives at `config/angellib/fishing-loot.json`. When enabled, vanilla still decides whether a catch is `fish`, `junk`, or `treasure`, but the item itself comes only from this JSON.
 
 The JSON has top-level `fish`, `junk`, and `treasure` lists. Each entry uses vanilla-style `weight`, supports `count` and `meta` ranges, can be limited to a biome whitelist with `biomes` or inverted into a blacklist with `invertBiomes`, and biome selectors can be numeric IDs, biome names, or `*` to match any biome. Entries can also use explicit numeric enchant IDs or `useVanillaEnchantingRules` for vanilla-style random enchanting.
 

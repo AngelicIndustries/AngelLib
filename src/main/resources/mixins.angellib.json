@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "minVersion": "0.8.7-GTNH",
+  "package": "industries.angelic.angellib.mixins.mid",
+  "refmap": "mixins.angellib.refmap.json",
+  "target": "@env(DEFAULT)",
+  "compatibilityLevel": "JAVA_8",
+  "client" : [
+
+  ]
+}
