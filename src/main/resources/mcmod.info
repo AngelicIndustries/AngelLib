@@ -8,7 +8,7 @@
 		"mcversion": "${minecraftVersion}",
 		"url": "https://github.com/AngelicIndustries/AngelLib",
 		"updateUrl": "",
-		"authorList": ["jack"],
+		"authorList": ["Angelic Industries"],
 		"credits": "GT:NH Examplemod, basdxz",
 		"logoFile": "assets/${modId}/logo_no_bg.png",
 		"screenshots": [],
