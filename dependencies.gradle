@@ -37,26 +37,26 @@ dependencies {
     // https://nexus.gtnewhorizons.com/service/rest/repository/browse/public/
 
     // Pure runtime
-    runtimeOnlyNonPublishable("com.github.GTNewHorizons:Hodgepodge:2.7.211:dev")
-    runtimeOnlyNonPublishable("com.github.GTNewHorizons:NotEnoughItems:2.8.145-GTNH:dev")
+    runtimeOnlyNonPublishable("com.github.GTNewHorizons:Hodgepodge:2.7.216:dev")
+    runtimeOnlyNonPublishable("com.github.GTNewHorizons:NotEnoughItems:2.8.160-GTNH:dev")
     runtimeOnlyNonPublishable("curse.maven:archaicfix-677782:6785842")
-    runtimeOnlyNonPublishable("com.github.GTNewHorizons:GTNHLib:0.11.51:dev")
+    runtimeOnlyNonPublishable("com.github.GTNewHorizons:GTNHLib:0.11.54:dev")
     runtimeOnlyNonPublishable("com.github.GTNewHorizons:GTNH-Web-Map:0.3.46:dev")
     runtimeOnlyNonPublishable("com.clear.clearmybackground:clearmybackground:1.0.4-1.7.10:dev")
 
     // Compilation + runtime
-    devOnlyNonPublishable("com.github.GTNewHorizons:Angelica:2.2.31:dev")
+    devOnlyNonPublishable("com.github.GTNewHorizons:Angelica:2.2.33:dev")
     devOnlyNonPublishable(rfg.deobf("curse.maven:catalogue-vintage-1465746:8384975")) // 1.0.8-1.7.10
     devOnlyNonPublishable("com.falsepattern:falsepatternlib-mc1.7.10:1.12.2:dev")
-    devOnlyNonPublishable("com.github.GTNewHorizons:ServerUtilities:2.4.13:dev")
-    devOnlyNonPublishable("ganymedes01.etfuturum:Et-Futurum-Requiem:2.6.59-GTNH:dev")
+    devOnlyNonPublishable("com.github.GTNewHorizons:ServerUtilities:2.4.21:dev")
+    devOnlyNonPublishable("ganymedes01.etfuturum:Et-Futurum-Requiem:2.6.64-GTNH:dev")
 
 
     // Pure compile
-    devOnlyNonPublishable("com.github.GTNewHorizons:ModularUI2:2.3.91-1.7.10:dev")
+    devOnlyNonPublishable("com.github.GTNewHorizons:ModularUI2:2.3.92-1.7.10:dev")
     compileOnly("org.jetbrains:annotations:26.1.0")
     compileOnly("com.gtnewhorizons.retrofuturabootstrap:RetroFuturaBootstrap:1.1.2") { transitive = false }
-    compileOnly("com.github.GTNewHorizons:lwjgl3ify:3.0.35:dev")
+    compileOnly("com.github.GTNewHorizons:lwjgl3ify:3.0.39:dev")
     compileOnly("org.lwjgl:lwjgl-sdl:3.4.3")
     compileOnly(rfg.deobf("curse.maven:endercore-231868:4671288")) // Hodgepodge already ports the mod menu, but AngelLib still allows to modify both
     compileOnly(rfg.deobf("curse.maven:thaumcraft-223628:2227552")) {transitive=false}
@@ -65,7 +65,7 @@ dependencies {
 
     // Shadow
     shadowCompile("me.saharnooby:qoi-java:1.2.1")
-    shadowCompile("com.twelvemonkeys.imageio:imageio-webp:3.15.2")
+    shadowCompile("com.twelvemonkeys.imageio:imageio-webp:3.15.3")
 
     // Disabled
     // api("club.heiqi:qz_fontrender:1.4.3:dev")
