@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.launchwrapper.IClassTransformer;
 import net.minecraft.launchwrapper.Launch;
 
+import org.spongepowered.asm.mixin.MixinEnvironment;
 import org.spongepowered.asm.mixin.Mixins;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfig;
 import org.spongepowered.asm.mixin.transformer.Config;
@@ -18,9 +19,12 @@ import org.spongepowered.asm.mixin.transformer.Config;
 import cpw.mods.fml.relauncher.FMLRelaunchLog;
 
 /**
- * Drops an unmaintained mod's mixin that {@code @Redirect}s the same vanilla call EFR does, so EFR wins instead of both
- * failing {@code require = 1} and crashing the launch. Hooks the LaunchWrapper + Mixin pipeline shared by runClient and
- * runClient25.
+ * Drops an unmaintained mod's mixin that {@code @Redirect}s the vanilla call EFR does, when Mixin counts injections
+ * ({@code mixin.debug.countInjections}, which the GTNH buildscript turns on in development). There the redirect Mixin
+ * skips for the conflict fails validation and crashes the launch. Without it, as players run the game, Mixin only
+ * warns and skips that one redirect, so the mixin stays: dropping it would also drop its other fixes (ArchaicFix's
+ * keeps the game from leaving fullscreen whenever the window reports itself inactive, which lwjgl3ify's does). Hooks
+ * the LaunchWrapper + Mixin pipeline shared by runClient and runClient25.
  */
 public final class EtFuturumRedirectConflictCompat implements IClassTransformer {
 
@@ -44,13 +48,14 @@ public final class EtFuturumRedirectConflictCompat implements IClassTransformer 
 
     // Unmaintained mods only; maintained ones (Angelica, ServerUtilities) are left for their upstreams / pack config.
     private static final Conflict[] CONFLICTS = {
-        // ArchaicFix's downloading-terrain hider vs EFR's world-thumbnail loading bridge, both on Minecraft.loadWorld.
+        // ArchaicFix's working screen vs EFR's modern loading screen, both on launchIntegratedServer's second
+        // displayGuiScreen.
         new Conflict(
             "mixins.archaicfix.early.json",
             "client.core.MixinMinecraft",
             "mixins.etfuturum.early.json",
             "MixinMinecraft_LoadingBridge",
-            "ArchaicFix's downloading-terrain screen hider vs EFR's world-thumbnail loading screen"), };
+            "ArchaicFix's working screen vs EFR's modern loading screen, with Mixin counting injections"), };
 
     private static final AtomicBoolean REGISTERED = new AtomicBoolean();
 
@@ -61,6 +66,10 @@ public final class EtFuturumRedirectConflictCompat implements IClassTransformer 
     private int attempts;
 
     static void registerEarly() {
+        if (!MixinEnvironment.getDefaultEnvironment()
+            .getOption(MixinEnvironment.Option.DEBUG_INJECTORS)) {
+            return; // The conflict only costs the skipped redirect; leave the mixin and its other fixes alone.
+        }
         if (!REGISTERED.compareAndSet(false, true)) {
             return;
         }
