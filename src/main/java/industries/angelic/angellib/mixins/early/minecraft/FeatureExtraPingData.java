@@ -40,7 +40,14 @@ import io.netty.util.concurrent.GenericFutureListener;
 
 public class FeatureExtraPingData {
 
+    /** What AngelLib clients appended to the hostname before marking pings with {@link #ANGEL_PORT}. */
     private static final String ANGEL_TOKEN = "\0" + AngelLib.MODID + "\0";
+    /**
+     * The port an AngelLib client's server list ping names in its handshake, where other clients name the port they
+     * connected to, which is never 0. Relays such as e4mc route by the hostname and turn away one with anything
+     * appended, but pass the port on as it is, and servers don't use it.
+     */
+    private static final int ANGEL_PORT = 0;
 
     @Mixin(NetHandlerStatusServer.class)
     public static class NetHandlerStatusServerMixin {
@@ -180,11 +187,10 @@ public class FeatureExtraPingData {
             GenericFutureListener<? super Future<? super Void>>[] listeners, @Local ServerAddress serveraddress) {
             if (packet instanceof C00Handshake handshake) {
                 AngelLib.debug("Sending modified C00Handshake ");
-                String modifiedIp = serveraddress.getIP() + ANGEL_TOKEN;
                 C00Handshake modified = new C00Handshake(
                     5,
-                    modifiedIp,
-                    serveraddress.getPort(),
+                    serveraddress.getIP(),
+                    ANGEL_PORT,
                     EnumConnectionState.STATUS);
 
                 instance.scheduleOutboundPacket(modified, listeners);
@@ -204,8 +210,9 @@ public class FeatureExtraPingData {
         @Inject(method = "processHandshake", at = @At("HEAD"))
         public void onProcessHandshake(C00Handshake packet, CallbackInfo ci) {
             String serverIpField = ((AccessorC00Handshake) packet).getField_149598_b();
+            int portField = ((AccessorC00Handshake) packet).getField_149599_c();
 
-            if (serverIpField.contains(ANGEL_TOKEN)) {
+            if (portField == ANGEL_PORT || serverIpField.contains(ANGEL_TOKEN)) {
                 AngelLib.debug("Received AngelLib client!");
                 ((INetworkManager) field_147386_b).setAngelClient();
             }

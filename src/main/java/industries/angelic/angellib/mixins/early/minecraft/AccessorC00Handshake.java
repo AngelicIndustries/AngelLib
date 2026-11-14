@@ -11,4 +11,8 @@ public interface AccessorC00Handshake {
     // Gets server IP
     @Accessor
     String getField_149598_b();
+
+    // Gets the port the client connected to
+    @Accessor
+    int getField_149599_c();
 }

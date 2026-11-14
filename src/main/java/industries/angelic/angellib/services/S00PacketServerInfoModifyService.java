@@ -84,10 +84,10 @@ public class S00PacketServerInfoModifyService {
             }
         }
 
-        if (!angellibPayload.entrySet()
-            .isEmpty()) {
-            ((IServerStatusResponse) response).setExtraData(angellibPayload);
-        }
+        // The server keeps one response for every ping, so clear what an earlier ping was given.
+        ((IServerStatusResponse) response).setExtraData(
+            angellibPayload.entrySet()
+                .isEmpty() ? null : angellibPayload);
     }
 
     public static void callDeserializeHandlers(ServerStatusResponse response, ServerData serverData) {
