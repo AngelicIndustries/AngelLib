@@ -3,7 +3,6 @@ package industries.angelic.angellib.mixins.early.minecraft;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
@@ -37,6 +36,7 @@ import com.llamalad7.mixinextras.sugar.Local;
 
 import industries.angelic.angellib.AngelLib;
 import industries.angelic.angellib.mixininterfaces.IAnimatedServerData;
+import industries.angelic.angellib.util.Base64Util;
 import industries.angelic.angellib.util.FileUtil;
 import industries.angelic.angellib.util.GifUtil;
 import io.netty.buffer.ByteBuf;
@@ -281,8 +281,7 @@ public class FeatureAnimatedIcon {
             AngelLib.varInstanceClient.gifloaderPool.submit(() -> {
                 try {
                     long t0 = System.nanoTime();
-                    byte[] decoded = Base64.getDecoder()
-                        .decode(base64);
+                    byte[] decoded = Base64Util.decode(base64);
                     long t1 = System.nanoTime();
                     GifUtil.StitchedAnimationData stitchedData = GifUtil.deserializeStitchedData(decoded);
                     GifUtil.validateStitchedData(stitchedData);
