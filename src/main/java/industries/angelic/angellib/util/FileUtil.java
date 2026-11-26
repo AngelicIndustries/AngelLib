@@ -236,6 +236,10 @@ public class FileUtil {
         if (extensions == null || extensions.length == 0) {
             extensions = new String[] { "png", "gif" };
         }
+        FilePickerResult scripted = takeScriptedAnswer();
+        if (scripted != null) {
+            return validateSelection(scripted, extensions);
+        }
 
         // Pojav-based launchers run Minecraft in a regular Linux JVM, but desktop picker
         // implementations such as TinyFD and AWT cannot display an Android document picker.
@@ -265,6 +269,149 @@ public class FileUtil {
         }
 
         return FilePickerResult.unavailable(GuiText.tr("angellib.gui.file_picker.unavailable"));
+    }
+
+    /**
+     * Asks where to save a file, with the native dialog where there is one. The file need not exist yet; when the name
+     * typed has no extension, {@code extension} is added.
+     */
+    public static FilePickerResult pickSaveFile(String title, File initialDirectory, String defaultName,
+        String extension) {
+        FilePickerResult scripted = takeScriptedAnswer();
+        if (scripted == null && hasPojavBridge()) {
+            return FilePickerResult.unavailable(GuiText.tr("angellib.gui.file_picker.unavailable"));
+        }
+        String name = defaultName != null && !defaultName.trim()
+            .isEmpty() ? defaultName.trim() : "file." + extension;
+
+        FilePickerResult result = scripted != null ? scripted
+            : FilePickerResult.unavailable(GuiText.tr("angellib.gui.file_picker.unavailable"));
+        if (scripted == null && isMacOs()) {
+            result = saveWithMacOsaScript(title, initialDirectory, name);
+        }
+        if (scripted == null && result.getStatus() == FilePickerResult.Status.UNAVAILABLE && !isWindows()) {
+            result = saveWithTinyfd(title, initialDirectory, name, extension);
+        }
+        if (scripted == null && result.getStatus() == FilePickerResult.Status.UNAVAILABLE) {
+            result = saveWithAwt(title, initialDirectory, name);
+        }
+        if (result.getStatus() != FilePickerResult.Status.SELECTED || result.getFile() == null) {
+            return result;
+        }
+        File file = result.getFile();
+        if (extension != null && !extension.isEmpty()
+            && !hasSupportedExtension(file.getName(), new String[] { extension })) {
+            file = new File(file.getParentFile(), file.getName() + "." + extension);
+        }
+        return FilePickerResult.selected(file);
+    }
+
+    private static FilePickerResult saveWithAwt(String title, File initialDirectory, String defaultName) {
+        try {
+            FileDialog dialog = new FileDialog((Frame) null, safeTitle(title), FileDialog.SAVE);
+            dialog.setDirectory(defaultPickerPath(initialDirectory));
+            dialog.setFile(defaultName);
+            dialog.setVisible(true);
+            String file = dialog.getFile();
+            if (file == null || file.isEmpty()) {
+                return FilePickerResult.cancelled();
+            }
+            return FilePickerResult.selected(new File(dialog.getDirectory(), file));
+        } catch (Throwable t) {
+            AngelLib.LOG.error("Native save dialog failed in AWT path", t);
+            String message = t.getMessage() != null ? t.getMessage()
+                : t.getClass()
+                    .getSimpleName();
+            return FilePickerResult.error(GuiText.tr("angellib.gui.common.failed_message", message));
+        }
+    }
+
+    private static FilePickerResult saveWithTinyfd(String title, File initialDirectory, String defaultName,
+        String extension) {
+        try {
+            Class<?> pointerBufferClass = Class.forName("org.lwjgl.PointerBuffer");
+            Class<?> tinyDialogsClass = Class.forName("org.lwjgl.util.tinyfd.TinyFileDialogs");
+            String[] extensions = extension != null && !extension.isEmpty() ? new String[] { extension }
+                : new String[0];
+            Object filters = createTinyfdFilters(pointerBufferClass, extensions);
+            File directory = initialDirectory != null ? initialDirectory : getDefaultFileSelectionDirectory();
+            Object path = tinyDialogsClass
+                .getMethod(
+                    "tinyfd_saveFileDialog",
+                    CharSequence.class,
+                    CharSequence.class,
+                    pointerBufferClass,
+                    CharSequence.class)
+                .invoke(
+                    null,
+                    safeTitle(title),
+                    new File(directory, defaultName).getAbsolutePath(),
+                    filters,
+                    extensions.length > 0 ? buildFilterLabel(extensions) : null);
+            if (path == null || path.toString()
+                .isEmpty()) {
+                return FilePickerResult.cancelled();
+            }
+            return FilePickerResult.selected(new File(path.toString()));
+        } catch (ClassNotFoundException e) {
+            return FilePickerResult.unavailable(GuiText.tr("angellib.gui.file_picker.tinyfd_missing"));
+        } catch (Throwable t) {
+            AngelLib.LOG.warn("TinyFD save dialog failed, trying AWT", t);
+            return FilePickerResult.unavailable(GuiText.tr("angellib.gui.file_picker.unavailable"));
+        }
+    }
+
+    private static FilePickerResult saveWithMacOsaScript(String title, File initialDirectory, String defaultName) {
+        List<String> command = new ArrayList<>();
+        command.add("osascript");
+        command.add("-e");
+        command.add("try");
+        command.add("-e");
+        String location = initialDirectory != null
+            ? " default location POSIX file \"" + escapeAppleScript(initialDirectory.getAbsolutePath()) + "\""
+            : "";
+        command.add(
+            "set _picked to choose file name with prompt \"" + escapeAppleScript(
+                safeTitle(title)) + "\" default name \"" + escapeAppleScript(defaultName) + "\"" + location);
+        command.add("-e");
+        command.add("return POSIX path of _picked");
+        command.add("-e");
+        command.add("on error number -128");
+        command.add("-e");
+        command.add("return \"\"");
+        command.add("-e");
+        command.add("end try");
+        try {
+            Process process = new ProcessBuilder(command).start();
+            String output = readAll(process.getInputStream());
+            if (process.waitFor() != 0) {
+                return FilePickerResult.error(GuiText.tr("angellib.gui.file_picker.macos_failed"));
+            }
+            String path = output != null ? output.trim() : "";
+            return path.isEmpty() ? FilePickerResult.cancelled() : FilePickerResult.selected(new File(path));
+        } catch (IOException e) {
+            return FilePickerResult.unavailable(GuiText.tr("angellib.gui.file_picker.osascript_missing"));
+        } catch (InterruptedException e) {
+            Thread.currentThread()
+                .interrupt();
+            return FilePickerResult.error(GuiText.tr("angellib.gui.file_picker.interrupted"));
+        }
+    }
+
+    /**
+     * For automated tests, which can't click through a native dialog: the system property
+     * {@value #SCRIPTED_ANSWER_PROPERTY} answers the next file or save dialog with its path, once.
+     */
+    public static final String SCRIPTED_ANSWER_PROPERTY = "angellib.filePicker.next";
+
+    private static synchronized FilePickerResult takeScriptedAnswer() {
+        String path = System.getProperty(SCRIPTED_ANSWER_PROPERTY);
+        if (path == null || path.isEmpty()) {
+            return null;
+        }
+        System.clearProperty(SCRIPTED_ANSWER_PROPERTY);
+        AngelLib.LOG.info("[FileUtil] Answering a file dialog with {} ({})", path, SCRIPTED_ANSWER_PROPERTY);
+        return FilePickerResult.selected(new File(path));
     }
 
     public static File getDefaultFileSelectionDirectory() {
