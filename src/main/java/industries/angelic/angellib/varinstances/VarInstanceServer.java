@@ -16,6 +16,7 @@ import com.google.common.base.Charsets;
 
 import industries.angelic.angellib.AngelLib;
 import industries.angelic.angellib.Config;
+import industries.angelic.angellib.util.ApngUtil;
 import industries.angelic.angellib.util.GifUtil;
 import industries.angelic.angellib.util.ImageUtil;
 import industries.angelic.angellib.util.QoiUtil;
@@ -55,12 +56,18 @@ public class VarInstanceServer {
             staticFaviconBlob = null;
         }
 
-        // --- Animated icon (gif > animated webp) ---
+        // --- Animated icon (gif > apng > animated png > animated webp) ---
+        // An animated server-icon.png stays the static icon too: programs without APNG support see its first frame.
         File gifFile = getServerIconFile("server-icon.gif");
+        File apngFile = getServerIconFile("server-icon.apng");
         if (gifFile.isFile()) {
-            loadAnimatedFavicon(gifFile, false);
+            loadAnimatedFavicon(gifFile, AnimatedFormat.GIF);
+        } else if (apngFile.isFile()) {
+            loadAnimatedFavicon(apngFile, AnimatedFormat.APNG);
+        } else if (pngFile.isFile() && isAnimatedPng(pngFile)) {
+            loadAnimatedFavicon(pngFile, AnimatedFormat.APNG);
         } else if (webpIsAnimated) {
-            loadAnimatedFavicon(webpFile, true);
+            loadAnimatedFavicon(webpFile, AnimatedFormat.WEBP);
         } else {
             AngelLib.LOG.info("Animated server icon not found");
             animatedFaviconBlob = null;
@@ -90,12 +97,29 @@ public class VarInstanceServer {
             .getFile(configuredDirectory);
     }
 
-    private void loadAnimatedFavicon(File file, boolean isWebp) {
+    private enum AnimatedFormat {
+        GIF,
+        APNG,
+        WEBP
+    }
+
+    private static boolean isAnimatedPng(File file) {
+        try {
+            return ApngUtil.isAnimated(Files.readAllBytes(file.toPath()));
+        } catch (IOException e) {
+            AngelLib.LOG.error("Couldn't probe {}", file.getName(), e);
+            return false;
+        }
+    }
+
+    private void loadAnimatedFavicon(File file, AnimatedFormat format) {
         try {
             byte[] fileBytes = Files.readAllBytes(file.toPath());
             GifUtil.GifData gifData;
-            if (isWebp) {
+            if (format == AnimatedFormat.WEBP) {
                 gifData = WebpUtil.readAnimated(fileBytes);
+            } else if (format == AnimatedFormat.APNG) {
+                gifData = ApngUtil.read(fileBytes);
             } else {
                 gifData = GifUtil.readGif(fileBytes);
             }

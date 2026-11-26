@@ -74,4 +74,6 @@ dependencies {
     //runtimeOnlyNonPublishable(rfg.deobf("curse.maven:creativecore-257814:2462369"))
 
     //devOnlyNonPublishable(rfg.deobf("curse.maven:dragonapi-235591:4722480"))
+
+    testImplementation("junit:junit:4.13.2")
 }

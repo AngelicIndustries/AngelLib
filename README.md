@@ -15,7 +15,7 @@ A shared code library and tweak/fix mod.
 [![cord](images/badges/cord.png)](https://discord.gg/xAWCqGrguG)
 
 ## Features
-* Support for animated GIF server icons. Just drop a `server-icon.gif` file in the server root directory. Size limits are configurable. HodgePodge is a soft dependency, required if you want to use larger GIFs (because of the packet size limit).
+* Support for animated GIF and APNG server icons. Just drop a `server-icon.gif` or `server-icon.apng` file (or an animated `server-icon.png`) in the server root directory. Size limits are configurable. HodgePodge is a soft dependency, required if you want to use larger GIFs (because of the packet size limit).
 ![animated_server_icons](images/animated_server_icons.gif)
 Use the `/reload_icon` command to reload the icon. Also works for `server-icon.png`.
 * API to modify the `S00PacketServerInfo` packet. Example:
