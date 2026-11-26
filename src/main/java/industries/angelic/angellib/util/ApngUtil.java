@@ -139,18 +139,39 @@ public final class ApngUtil {
      * stores only the rectangle that changed and replaces it.
      */
     public static byte[] write(BufferedImage[] frames, int[] delaysMs, int plays) throws IOException {
-        if (frames.length == 0 || frames.length != delaysMs.length) {
+        if (frames.length != delaysMs.length) {
             throw new IllegalArgumentException("frames and delays don't match");
         }
-        int width = frames[0].getWidth();
-        int height = frames[0].getHeight();
+        return write(frames.length, index -> frames[index], delaysMs, plays);
+    }
+
+    /** Hands out frames one at a time, so a long APNG can be written without holding them all. */
+    public interface FrameSource {
+
+        BufferedImage frame(int index) throws IOException;
+    }
+
+    /**
+     * As {@link #write(BufferedImage[], int[], int)}, asking for each frame when it is written; only the frame before
+     * it is kept, as pixels, to find what changed.
+     */
+    public static byte[] write(int frameCount, FrameSource frames, int[] delaysMs, int plays) throws IOException {
+        if (frameCount == 0 || frameCount != delaysMs.length) {
+            throw new IllegalArgumentException("frames and delays don't match");
+        }
+        int width = -1;
+        int height = -1;
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream out = new DataOutputStream(bytes);
         out.write(SIGNATURE);
         int sequence = 0;
         int[] previous = null;
-        for (int i = 0; i < frames.length; i++) {
-            BufferedImage frame = toArgb(frames[i]);
+        for (int i = 0; i < frameCount; i++) {
+            BufferedImage frame = toArgb(frames.frame(i));
+            if (i == 0) {
+                width = frame.getWidth();
+                height = frame.getHeight();
+            }
             if (frame.getWidth() != width || frame.getHeight() != height) {
                 throw new IllegalArgumentException("Frame " + i + " isn't " + width + "x" + height);
             }
@@ -164,7 +185,7 @@ public final class ApngUtil {
                 writeChunk(out, "IHDR", headerChunk(encoded).data);
                 ByteArrayOutputStream control = new ByteArrayOutputStream();
                 DataOutputStream c = new DataOutputStream(control);
-                c.writeInt(frames.length);
+                c.writeInt(frameCount);
                 c.writeInt(plays);
                 writeChunk(out, "acTL", control.toByteArray());
             }

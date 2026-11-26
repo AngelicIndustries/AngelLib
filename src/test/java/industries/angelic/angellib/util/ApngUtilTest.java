@@ -29,6 +29,13 @@ public class ApngUtilTest {
     }
 
     @Test
+    public void framesCanBeHandedOutOneAtATime() throws IOException {
+        BufferedImage[] frames = { pattern(0), pattern(1), pattern(2) };
+        byte[] streamed = ApngUtil.write(3, index -> pattern(index), new int[] { 100, 100, 100 }, 0);
+        Assert.assertArrayEquals(ApngUtil.write(frames, new int[] { 100, 100, 100 }, 0), streamed);
+    }
+
+    @Test
     public void programsWithoutApngSeeTheFirstFrame() throws IOException {
         BufferedImage[] frames = { pattern(0), pattern(1) };
         byte[] apng = ApngUtil.write(frames, new int[] { 100, 100 }, 0);
